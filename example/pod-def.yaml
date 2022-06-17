@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-app-config
+spec:
+  volumes:
+    - name: app-config-volume
+      configMap:
+        name: app-config
+  containers:
+    - image: alpine:3.11.3
+      name: pod-app-config
+      command:
+        - sleep
+        - infinity
+      volumeMounts:
+        - name: app-config-volume
+          mountPath: /mnt/config
+
+

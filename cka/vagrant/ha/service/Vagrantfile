@@ -1,0 +1,117 @@
+# Variables
+BOX="omidb11m/ubuntu-k8s"
+BOX_VERSION="0.1.1"
+USER="anisa"
+PASSWORD="qazwsx"
+SSH_WITH_PASS="false"
+PUBLIC_KEY="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC32l9KXdhdf2mITNRac0AbiCpuCRI4EQVg3v2ss+2hLtJKeZWamgaybPQ0sLJrVVgswPFxpPaZHjytvz0NbJnE9razaxQ1GAb+IJRdAdLLS2eiWL3HpaAmRIEb9oc6VpIuX/rgOhaapRqjef4vTokj6qotHWgDp3Qf5oHY1nFYI+cJ9AJx+oEWebLHpHBg0EaTF1l3Wwhiu3xapQ9/vU/jNnpXXhe0ewF2tF+hKnvth2Pk44yGpClt20QwEnYsyM7NYeMKR+nzhX56h97rglOWp/fqqPwN0RRiYY4B3dflQO/K2s3VpTZ4bY9e1nk+4iWKnY/H2I1453bdOUNO8rQrbtKXpflPDEocArY0b791ra0vSkqJoVw3JFRfnTA7dU3EwWxhnTL7nWsU0q6TFM1y3I/s/wBrkLcOgRLpA/jbEUkwxmfs33JbHs83iuqFwmPgucGdZ4+kuzYte3FQ7fXNKzGWxG4qZVINHXSeuA4nHodtOgh1m7fTKV+ooGrDo/U= ahmadbabaeimoghadam@Ahmads-MBP.fritz.box"
+PRIVATE_INTERFACE_NAME="enp0s8"
+IP_NW = "192.168.200."
+APISERVER_VIP = "192.168.200.200"
+PREFIX = "ha"
+
+MASTER_IP_START = 10
+MASTER_COUNT = 3
+MASTER_NAME = "#{PREFIX}-kubemaster"
+MASTER_MEMORY_MB = "2048"
+MASTER_CPU_COUNT = "2"
+
+WORKER_IP_START = 50
+WORKER_COUNT = 0
+WORKER_NAME = "#{PREFIX}-kubeworker"
+WORKER_MEMORY_MB = "2048"
+WORKER_CPU_COUNT = "2"
+
+# the port used for api server itself and not the vip port
+APISERVER_BACKEND_PORT = 8443
+
+# Environment variables
+ENV["LC_ALL"] = "en_US.UTF-8"
+
+Vagrant.configure("2") do |config|
+    config.vm.box = BOX
+    config.vm.box_version = BOX_VERSION
+    config.ssh.forward_agent = true
+
+    config.vm.provision "setup-hosts", :type => "shell", :path => "../../scripts/setup-hosts.sh" do |s|
+        s.env = {
+            PRIVATE_INTERFACE_NAME: PRIVATE_INTERFACE_NAME,
+            IP_NW: IP_NW,
+            MASTER_IP_START: MASTER_IP_START,
+            MASTER_COUNT: MASTER_COUNT,
+            MASTER_NAME: MASTER_NAME,
+            WORKER_IP_START: WORKER_IP_START,
+            WORKER_COUNT: WORKER_COUNT,
+            WORKER_NAME: WORKER_NAME,
+            APISERVER_VIP: APISERVER_VIP
+        }
+    end
+    config.vm.provision "setup-password", :type => "shell", :path => "../../scripts/setup-password.sh" do |s|
+        s.env = {
+            USER: USER,
+            PASSWORD: PASSWORD
+        }
+    end
+    config.vm.provision "setup-ssh", :type => "shell", :path => "../../scripts/setup-ssh.sh" do |s|
+        s.env = {
+            USER: USER,
+            SSH_WITH_PASS: SSH_WITH_PASS,
+            PUBLIC_KEY: PUBLIC_KEY
+        }
+    end
+
+    # Provision Master Node
+    (1..MASTER_COUNT).each do |i|
+        config.vm.define "#{MASTER_NAME}-#{i}" do |master|
+            master.vm.network :private_network,
+                ip: IP_NW + "#{MASTER_IP_START + i}",
+                auto_config: true
+            master.vm.hostname = "#{MASTER_NAME}-#{i}"
+            master.vm.provider "virtualbox" do |virtualbox|
+                virtualbox.name = "#{MASTER_NAME}-#{i}"
+                virtualbox.memory = MASTER_MEMORY_MB
+                virtualbox.cpus = MASTER_CPU_COUNT
+                virtualbox.gui = false
+            end
+            if MASTER_COUNT > 1
+                master.vm.provision "setup-lb", :type => "shell", :path => "../../scripts/setup-lb.sh" do |s|
+                    s.env = {
+                        MASTER_COUNT: MASTER_COUNT,
+                        MASTER_NAME: MASTER_NAME,
+                        APISERVER_SRC_PORT: APISERVER_BACKEND_PORT
+                    }
+                end
+                master.vm.provision "setup-keepalived", :type => "shell", :path => "../../scripts/setup-keepalived.sh" do |s|
+                    s.env = {
+                        STATE: "MASTER",
+                        INTERFACE: PRIVATE_INTERFACE_NAME,
+                        APISERVER_VIP: APISERVER_VIP
+                    }
+                end if i == 1;
+                master.vm.provision "setup-keepalived", :type => "shell", :path => "../../scripts/setup-keepalived.sh" do |s|
+                    s.env = {
+                        STATE: "BACKUP",
+                        INTERFACE: PRIVATE_INTERFACE_NAME,
+                        APISERVER_VIP: APISERVER_VIP
+                    }
+                end if i != 1;
+            end
+        end
+    end
+
+    # Provision Worker Nodes
+    (1..WORKER_COUNT).each do |i|
+        config.vm.define "#{WORKER_NAME}-#{i}" do |worker|
+            worker.vm.network :private_network,
+                ip: IP_NW + "#{WORKER_IP_START + i}",
+                auto_config: true
+            worker.vm.hostname = "#{WORKER_NAME}-#{i}"
+            worker.vm.provider :virtualbox do |virtualbox|
+                virtualbox.name = "#{WORKER_NAME}-#{i}"
+                virtualbox.memory = WORKER_MEMORY_MB
+                virtualbox.cpus = WORKER_CPU_COUNT
+                virtualbox.gui = false
+            end
+        end
+    end
+end

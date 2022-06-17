@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-multicontainer
+spec:
+  volumes:
+    - name: config
+      configMap:
+        name: app-config
+  containers:
+    - name: nginx
+      image: nginx:1.17
+      volumeMounts:
+        - name: config
+          mountPath: /mnt/config
+    - name: debugger
+      image: alpine:3.11.3
+      command:
+        - sleep
+        - infinity
+      volumeMounts:
+        - name: config
+          mountPath: /mnt/myconfig

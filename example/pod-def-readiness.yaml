@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: readiness-pod
+  labels:
+    app: readiness-pod
+spec:
+  containers:
+    - name: readiness
+      image: busybox:1.32
+      command:
+        - /bin/sh
+        - -c
+        - |
+          while true; do
+            echo "touch"
+            touch /tmp/healthy
+            sleep 20
+            echo "remove"
+            rm /tmp/healthy
+            sleep 20
+          done
+      readinessProbe:
+        exec:
+          command:
+            - cat
+            - /tmp/healthy
+        initialDelaySeconds: 1
+        periodSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: readiness-svc
+spec:
+  selector:
+    app: readiness-pod
+  ports:
+    - port: 80
+
